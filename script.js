@@ -1,1170 +1,516 @@
-// ARUM Website JavaScript
-// Extracted from index.html for better performance and caching
+// STATE MANAGEMENT
+const State = {
+  cart: JSON.parse(localStorage.getItem('stallcart_cart')) || [],
+  orders: JSON.parse(localStorage.getItem('stallcart_orders')) || [],
+  user: JSON.parse(localStorage.getItem('stallcart_user')) || null,
 
-// Supabase and Firebase Configuration
-const supabaseUrl = 'https://fmbnplpuitedqlvkddke.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtYm5wbHB1aXRlZHFsdmtkZGtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2ODY4NzQsImV4cCI6MjA4ODI2Mjg3NH0.WDZECVMRqfovCyuiGjyw4F_zttakJZrepYxpLNIslmg';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyAFCg26gXr-5vkCAp6b_XtXgbN8cvS8q2g",
-  authDomain: "arum-work.firebaseapp.com",
-  projectId: "arum-work",
-  storageBucket: "arum-work.firebasestorage.app",
-  messagingSenderId: "449287443075",
-  appId: "1:449287443075:web:e16ccfb509902010bd81b6"
-};
-
-// Global Variables
-let currentUser = null;
-let currentOrder = { service: '', basePrice: 0, finalPrice: 0, deliveryDays: 1, discount: 0, extraCharge: 0 };
-let orders = JSON.parse(localStorage.getItem('arumOrders') || '[]');
-let uploadedFiles = [];
-
-// Initialize Supabase
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-// Initialize Firebase
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, where, doc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
-
-// ==================== FILE UPLOAD FUNCTIONS ====================
-
-window.uploadFileToSupabase = async function(file) {
-    if (!file) return '';
-    try {
-        showToast('Uploading file...', '');
-        const fileName = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-        const { data, error } = await supabase.storage.from('files').upload(fileName, file);
-        if (error) { showToast('Upload failed: ' + error.message, 'error'); return ''; }
-        const { data: urlData } = supabase.storage.from('files').getPublicUrl(fileName);
-        if (urlData.publicUrl) { showToast('File uploaded successfully!', 'success'); return urlData.publicUrl; }
-        return '';
-    } catch (error) { showToast('Upload error: ' + error.message, 'error'); return ''; }
-};
-
-window.handleFileSelect = async function(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const p = input.parentElement.querySelector('p');
-    p.textContent = 'Uploading: ' + file.name + '...';
-    p.style.color = '#92400e';
-    const url = await uploadFileToSupabase(file);
-    if (url && url.length > 0) {
-        uploadedFiles.push(url);
-        p.textContent = '✓ Uploaded: ' + file.name;
-        p.style.color = '#15803d';
-    } else {
-        p.textContent = 'Upload failed. Try again!';
-        p.style.color = '#dc2626';
-    }
-};
-
-// ==================== MOBILE NAV FUNCTIONS ====================
-
-window.toggleMobileNav = function() {
-  const mobileNav = document.getElementById('mobileNav');
-  const hamburger = document.querySelector('.hamburger');
-  if(mobileNav && hamburger) {
-    mobileNav.classList.toggle('active');
-    hamburger.classList.toggle('active');
-  }
-  // Close all other modals/navs and handle body scroll
-  document.body.classList.toggle('no-scroll', mobileNav.classList.contains('active'));
-};
-
-window.closeMobileNav = function() {
-  const mobileNav = document.getElementById('mobileNav');
-  const hamburger = document.querySelector('.hamburger');
-  if(mobileNav && hamburger) {
-    mobileNav.classList.remove('active');
-    hamburger.classList.remove('active');
-    document.body.classList.remove('no-scroll');
-  }
-};
-
-// Handle resize for desktop/tablet
-window.addEventListener('resize', function() {
-  const mobileNav = document.getElementById('mobileNav');
-  const hamburger = document.querySelector('.hamburger');
-  if(window.innerWidth > 768 && mobileNav && hamburger) {
-    mobileNav.classList.remove('active');
-    hamburger.classList.remove('active');
-    document.body.classList.remove('no-scroll');
-  }
-});
-
-window.closeMobileNav = function() {
-  document.getElementById('mobileNav').classList.remove('active');
-  document.querySelector('.hamburger').classList.remove('active');
-};
-
-// ==================== TOAST NOTIFICATIONS ====================
-
-window.showToast = function(msg, type = '') {
-  const toast = document.getElementById('toast');
-  toast.innerText = msg;
-  toast.className = 'toast-msg ' + type;
-  setTimeout(() => toast.classList.add('show'), 10);
-  setTimeout(() => toast.classList.remove('show'), 3000);
-};
-
-// ==================== AUTH FUNCTIONS ====================
-
-function updateAuthUI() {
-  const headerActions = document.getElementById('headerActions');
-  const mobileNav = document.getElementById('mobileNav');
+  save: function() {
+    localStorage.setItem('stallcart_cart', JSON.stringify(this.cart));
+    localStorage.setItem('stallcart_orders', JSON.stringify(this.orders));
+    localStorage.setItem('stallcart_user', JSON.stringify(this.user));
+    updateNavCounts();
+  },
   
-  if(currentUser) {
-    const name = currentUser.displayName || currentUser.email.split('@')[0];
-    headerActions.innerHTML = `<span>${name}</span><button class="btn btn-outline" onclick="logout()">Logout</button>`;
-    
-    // Update mobile nav - hide Sign In/Get Started buttons and show user info
-    if(mobileNav) {
-      const signInBtn = mobileNav.querySelector('button[onclick*="openModal(\'login\')"]');
-      const getStartedBtn = mobileNav.querySelector('button[onclick*="openModal(\'signup\')"]');
-      if(signInBtn) signInBtn.style.display = 'none';
-      if(getStartedBtn) getStartedBtn.style.display = 'none';
-      
-      // Add user info and logout button if not already present
-      if(!mobileNav.querySelector('.mobile-user-info')) {
-        const userInfo = document.createElement('div');
-        userInfo.className = 'mobile-user-info';
-        userInfo.innerHTML = `<span style="color: white; padding: 10px; display: block;">👤 ${name}</span><button class="btn btn-outline" onclick="logout(); closeMobileNav();" style="margin: 10px;">Logout</button>`;
-        mobileNav.appendChild(userInfo);
-      }
-    }
-  } else {
-    headerActions.innerHTML = `<button class="btn btn-outline" onclick="openModal('login')">Sign In</button><button class="btn btn-solid" onclick="openModal('signup')">Get Started</button>`;
-    
-    // Update mobile nav - show Sign In/Get Started buttons
-    if(mobileNav) {
-      const signInBtn = mobileNav.querySelector('button[onclick*="openModal(\'login\')"]');
-      const getStartedBtn = mobileNav.querySelector('button[onclick*="openModal(\'signup\')"]');
-      if(signInBtn) signInBtn.style.display = '';
-      if(getStartedBtn) getStartedBtn.style.display = '';
-      
-      // Remove user info if present
-      const userInfo = mobileNav.querySelector('.mobile-user-info');
-      if(userInfo) userInfo.remove();
-    }
-  }
-  renderOrders();
-}
-
-window.signInWithEmail = async function() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  if(!email || !password) { showToast('Fill all fields','error'); return; }
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    showToast('Welcome back','success');
-    closeModal();
-  } catch { showToast('Invalid login','error'); }
-};
-
-window.signUpWithEmail = async function() {
-  const email = document.getElementById('signupEmail').value;
-  const password = document.getElementById('signupPassword').value;
-  if(!email || !password) { showToast('Fill all fields','error'); return; }
-  try {
-    await createUserWithEmailAndPassword(auth, email, password);
-    showToast('Account created','success');
-    closeModal();
-  } catch(e) { showToast('Signup error','error'); }
-};
-
-window.signInWithGoogle = async function() {
-  try {
-    await signInWithPopup(auth, googleProvider);
-    showToast('Welcome','success');
-    closeModal();
-  } catch { showToast('Google login failed','error'); }
-};
-
-window.logout = async function() { await signOut(auth); showToast('Logged out'); };
-
-onAuthStateChanged(auth, (user) => { currentUser = user; updateAuthUI(); });
-
-// ==================== MODAL FUNCTIONS ====================
-
-window.openModal = function(type) { 
-  document.getElementById('authModal').classList.add('active'); 
-  switchAuth(type); 
-};
-
-window.closeModal = function() { 
-  document.getElementById('authModal').classList.remove('active'); 
-};
-
-window.switchAuth = function(type) {
-  if(type === 'signup') {
-    document.getElementById('loginForm').style.display = 'none';
-    document.getElementById('signupForm').style.display = 'block';
-  } else {
-    document.getElementById('signupForm').style.display = 'none';
-    document.getElementById('loginForm').style.display = 'block';
-  }
-};
-
-// ==================== ORDER MODAL FUNCTIONS ====================
-
-window.openOrderModal = function(service, price) {
-  if(!currentUser) { openModal('login'); showToast('Login first','error'); return; }
-  currentOrder = { service, basePrice: price, finalPrice: price, deliveryDays: 1, discount: 0, extraCharge: 0 };
-  document.getElementById('orderServiceTitle').textContent = service;
-  document.getElementById('orderServicePrice').textContent = '₹' + price;
-  
-  // Custom Time Options for Report Creation
-  const timeOptionsContainer = document.querySelector('.time-options');
-  if (service === 'Report Creation' || service === 'Report Creation India') {
-    timeOptionsContainer.innerHTML = `
-      <div class="time-option selected" data-days="2" data-discount="0" onclick="selectTime(this)">
-        <div>In 2 Days</div>
-        <div class="price">Standard</div>
-      </div>
-      <div class="time-option" data-days="3" data-discount="5" onclick="selectTime(this)">
-        <div>In 3 Days<span class="discount-badge">-₹5</span></div>
-        <div class="price">Save ₹5</div>
-      </div>
-      <div class="time-option" data-days="4" data-discount="10" onclick="selectTime(this)">
-        <div>In 4 Days<span class="discount-badge">-₹10</span></div>
-        <div class="price">Save ₹10</div>
-      </div>
-      <div class="time-option" data-days="5" data-discount="15" onclick="selectTime(this)">
-        <div>In 5 Days<span class="discount-badge">-₹15</span></div>
-        <div class="price">Save ₹15</div>
-      </div>
-      <div class="time-option" data-days="0" data-discount="0" data-extra="899" onclick="selectTime(this)">
-        <div>Immediately<span class="immediate-badge">+₹899</span></div>
-        <div class="price">Today</div>
-      </div>
-    `;
-    window.selectTime(timeOptionsContainer.firstElementChild);
-  } else {
-    // Original Time Options for other services
-    timeOptionsContainer.innerHTML = `
-      <div class="time-option selected" data-days="1" data-discount="0" onclick="selectTime(this)">
-        <div>Tomorrow</div>
-        <div class="price">Standard</div>
-      </div>
-      <div class="time-option" data-days="2" data-discount="5" onclick="selectTime(this)">
-        <div>In 2 Days<span class="discount-badge">-₹5</span></div>
-        <div class="price">Save ₹5</div>
-      </div>
-      <div class="time-option" data-days="3" data-discount="10" onclick="selectTime(this)">
-        <div>In 3 Days<span class="discount-badge">-₹10</span></div>
-        <div class="price">Save ₹10</div>
-      </div>
-      <div class="time-option" data-days="4" data-discount="15" onclick="selectTime(this)">
-        <div>In 4 Days<span class="discount-badge">-₹15</span></div>
-        <div class="price">Save ₹15</div>
-      </div>
-      <div class="time-option" data-days="0" data-discount="0" data-extra="50" onclick="selectTime(this)">
-        <div>Immediately<span class="immediate-badge">+₹50</span></div>
-        <div class="price">Today</div>
-      </div>
-    `;
-    window.selectTime(timeOptionsContainer.firstElementChild);
-  }
-
-  document.getElementById('orderModal').classList.add('active');
-  resetOrderForm();
-  resetCoupon();
-};
-
-window.closeOrderModal = function() { 
-  document.getElementById('orderModal').classList.remove('active'); 
-};
-
-function resetOrderForm() {
-  document.getElementById('orderDescription').value = '';
-  document.getElementById('orderFirstName').value = '';
-  document.getElementById('orderLastName').value = '';
-  document.getElementById('orderPhone').value = '';
-  document.getElementById('orderSummary').value = '';
-  document.getElementById('termsCheck').checked = false;
-  document.getElementById('proceedBtn').disabled = true;
-  uploadedFiles = [];
-  const fileUploadP = document.querySelector('#fileInput + p');
-  if(fileUploadP) { fileUploadP.textContent = 'Click to upload files'; fileUploadP.style.color = ''; }
-}
-
-window.selectTime = function(el) {
-  document.querySelectorAll('.time-option').forEach(o => o.classList.remove('selected'));
-  el.classList.add('selected');
-  currentOrder.deliveryDays = parseInt(el.dataset.days);
-  currentOrder.discount = parseInt(el.dataset.discount || 0);
-  currentOrder.extraCharge = parseInt(el.dataset.extra || 0);
-  currentOrder.finalPrice = currentOrder.basePrice - currentOrder.discount + currentOrder.extraCharge;
-  document.getElementById('orderServicePrice').textContent = '₹' + currentOrder.finalPrice;
-};
-
-function updateProceedButton() {
-  const desc = document.getElementById('orderDescription').value.trim();
-  const fname = document.getElementById('orderFirstName').value.trim();
-  const lname = document.getElementById('orderLastName').value.trim();
-  const phone = document.getElementById('orderPhone').value.trim();
-  const terms = document.getElementById('termsCheck').checked;
-  document.getElementById('proceedBtn').disabled = !(desc && fname && lname && phone && terms);
-}
-
-window.proceedToPayment = function() {
-  currentOrder.description = document.getElementById('orderDescription').value.trim();
-  currentOrder.phone = document.getElementById('orderPhone').value.trim();
-  currentOrder.firstName = document.getElementById('orderFirstName').value.trim();
-  currentOrder.lastName = document.getElementById('orderLastName').value.trim();
-  currentOrder.projectSummary = document.getElementById('orderSummary').value.trim();
-  
-  document.getElementById('payService').textContent = currentOrder.service;
-  document.getElementById('payDescription').textContent = currentOrder.description.substring(0, 6) + '...';
-  document.getElementById('payPhone').textContent = currentOrder.phone;
-  document.getElementById('payPrice').textContent = '₹' + currentOrder.finalPrice;
-  closeOrderModal();
-  document.getElementById('paymentModal').classList.add('active');
-};
-
-window.closePaymentModal = function() { 
-  document.getElementById('paymentModal').classList.remove('active'); 
-};
-
-// ==================== PAYMENT & ORDERS ====================
-
-// Coupon system
-let appliedCoupon = null;
-let paymentScreenshotUrl = '';
-let verifyScreenshotUrl = '';
-let selectedVerifyOption = null;
-
-// Handle verify screenshot upload
-window.handleVerifyScreenshot = async function(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const p = document.getElementById('verifyScreenshotFileName');
-    p.textContent = 'Uploading: ' + file.name + '...';
-    p.style.color = '#92400e';
-    
-    try {
-        const fileName = 'verify_payment_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-        const { data, error } = await supabase.storage.from('files').upload(fileName, file);
-        if (error) {
-            p.textContent = 'Upload failed. Try again!';
-            p.style.color = '#dc2626';
-            return;
-        }
-        const { data: urlData } = supabase.storage.from('files').getPublicUrl(fileName);
-        if (urlData.publicUrl) {
-            verifyScreenshotUrl = urlData.publicUrl;
-            p.textContent = '✓ Uploaded: ' + file.name;
-            p.style.color = '#15803d';
-            // Enable the Continue button after screenshot is uploaded
-            document.getElementById('verifyProceedBtn').disabled = false;
-        }
-    } catch (error) {
-        p.textContent = 'Upload error: ' + error.message;
-        p.style.color = '#dc2626';
-    }
-};
-
-// Check transaction ID input and enable/disable button
-window.checkVerifyInput = function() {
-    const transactionId = document.getElementById('verifyTransactionId').value.trim();
-    const proceedBtn = document.getElementById('verifyProceedBtn');
-    
-    if (transactionId.length > 0) {
-        proceedBtn.disabled = false;
+  addToCart: function(product, qty = 1) {
+    const existing = this.cart.find(x => x.id === product.id);
+    if(existing) {
+      existing.qty += parseInt(qty);
     } else {
-        proceedBtn.disabled = true;
+      this.cart.push({...product, qty: parseInt(qty)});
     }
-};
+    this.save();
+    showToast("Added to Cart!");
+  },
 
-// Verification Modal Functions
-window.openVerifyModal = function() {
-    // Reset verify modal state
-    selectedVerifyOption = null;
-    verifyScreenshotUrl = '';
-    document.getElementById('verifyScreenshotFileName').textContent = 'Click to upload screenshot';
-    document.getElementById('verifyScreenshotFileName').style.color = '';
-    document.getElementById('verifyTransactionId').value = '';
-    document.getElementById('screenshotSection').style.display = 'none';
-    document.getElementById('transactionSection').style.display = 'none';
-    document.getElementById('screenshotOption').classList.remove('selected');
-    document.getElementById('transactionOption').classList.remove('selected');
-    document.getElementById('verifyProceedBtn').disabled = true;
-    
-    document.getElementById('verifyModal').classList.add('active');
-};
-
-window.closeVerifyModal = function() {
-    document.getElementById('verifyModal').classList.remove('active');
-};
-
-window.selectVerifyOption = function(option) {
-    selectedVerifyOption = option;
-    
-    // Update UI
-    document.getElementById('screenshotOption').classList.remove('selected');
-    document.getElementById('transactionOption').classList.remove('selected');
-    document.getElementById(option + 'Option').classList.add('selected');
-    
-    // Show appropriate section
-    if (option === 'screenshot') {
-        document.getElementById('screenshotSection').style.display = 'block';
-        document.getElementById('transactionSection').style.display = 'none';
+  updateQty: function(id, qty) {
+    if(qty <= 0) {
+      this.cart = this.cart.filter(x => x.id !== id);
     } else {
-        document.getElementById('screenshotSection').style.display = 'none';
-        document.getElementById('transactionSection').style.display = 'block';
+      const item = this.cart.find(x => x.id === id);
+      if(item) item.qty = parseInt(qty);
     }
-    
-    // Enable proceed button
-    document.getElementById('verifyProceedBtn').disabled = false;
+    this.save();
+    if(location.hash === '#cart') renderCart();
+    if(location.hash === '#checkout') renderCheckout();
+  },
+  
+  getCartTotal: function() {
+    return this.cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  },
+
+  clearCart: function() {
+    this.cart = [];
+    this.save();
+  }
 };
 
-window.proceedToConfirm = function() {
-    // Get the transaction ID if selected
-    const transactionId = document.getElementById('verifyTransactionId').value.trim();
-    
-    // Store verification data in currentOrder for saving later
-    currentOrder.verifyOption = selectedVerifyOption;
-    currentOrder.verifyScreenshotUrl = verifyScreenshotUrl;
-    currentOrder.verifyTransactionId = transactionId;
-    
-    // Save verification data to Firestore
-    saveVerificationData(currentOrder.orderId, verifyScreenshotUrl, transactionId);
-    
-    closeVerifyModal();
-    document.getElementById('confirmOrderId').textContent = 'Order ID: #' + currentOrder.orderId;
-    document.getElementById('confirmModal').classList.add('active');
-};
-
-// Save verification data to Firestore
-async function saveVerificationData(orderId, screenshotUrl, transactionId) {
-    try {
-        const q = query(collection(db, "orders"), where("id", "==", orderId));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-            const orderDoc = doc(db, "orders", querySnapshot.docs[0].id);
-            const updateData = {};
-            
-            if (screenshotUrl) {
-                updateData.paymentScreenshot = screenshotUrl;
-            }
-            if (transactionId) {
-                updateData.transactionId = transactionId;
-            }
-            
-            if (Object.keys(updateData).length > 0) {
-                await updateDoc(orderDoc, updateData);
-                console.log('Verification data saved:', updateData);
-            }
-        }
-    } catch (error) {
-        console.error('Error saving verification data:', error);
-    }
+// UTILS
+function showToast(msg) {
+  const container = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerText = msg;
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
 }
 
-// Modified closeConfirmModal to show success message
-window.closeConfirmModal = function() {
-    // Show success message before closing
-    const confirmModal = document.getElementById('confirmModal');
-    const modalBox = confirmModal.querySelector('.modal-box');
-    
-    // Replace content with success message
-    modalBox.innerHTML = `
-        <div class="verify-success-message">
-            <div class="success-icon">✅</div>
-            <h3>Payment Verification Started!</h3>
-            <p>We verify your payment details in <strong>1-2 hours</strong>. Once verified, we will approve your order and start working on it.</p>
-            <p style="margin-top: 10px;">You'll receive a WhatsApp message once your order is approved!</p>
+function updateNavCounts() {
+  document.getElementById('nav-cart-count').innerText = State.cart.reduce((s, x) => s + x.qty, 0);
+  const authLink = document.getElementById('nav-auth-link');
+  if(State.user) {
+    authLink.innerHTML = `<i class="fa-regular fa-user user-icon-accent"></i><span class="action-text">${State.user.name}</span>`;
+  } else {
+    authLink.innerHTML = `<i class="fa-regular fa-user"></i><span class="action-text">Sign In</span>`;
+  }
+}
+
+function renderProductCard(p) {
+  return `
+    <div class="product-card" onclick="location.hash='#product/${p.id}'" style="cursor:pointer">
+      <img src="${p.image}" alt="${p.title}">
+      <h3>${p.title}</h3>
+      <div class="price">₹${p.price.toLocaleString('en-IN')}</div>
+      <button class="btn btn-orange" onclick="event.stopPropagation(); State.addToCart(DB.getProductById(${p.id}))">Add to Cart</button>
+    </div>
+  `;
+}
+
+// VIEWS
+const app = document.getElementById('app-content');
+
+function renderHome() {
+  const featProducts = [...DB.getProducts().filter(p => p.isFeatured)].slice(0, 8); // Grab top 8 featured
+
+  app.innerHTML = `
+    <div class="hero-modern">
+      <h1>Trends. Deals, Everything.</h1>
+      <div class="hero-buttons">
+        <button class="btn btn-orange" onclick="location.hash='#cat/women'">Shop Now</button>
+        <button class="btn btn-outline" style="background:white" onclick="location.hash='#cat/men'">Explore Products</button>
+      </div>
+      <div class="hero-image-container">
+        <!-- Modern clear shopping image -->
+        <img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1400&q=80" alt="Shopping Trends">
+      </div>
+    </div>
+
+    <div class="container">
+      <h2 class="section-title">Shop by Categories</h2>
+      <div class="categories-grid">
+        <div class="cat-pill" onclick="location.hash='#cat/women'">
+          <img src="https://images.unsplash.com/photo-1543163521-1bf539c55dd2?ixlib=rb-4.0.3&w=200" alt="Fashion">
+          <span>Fashion</span>
         </div>
-        <button class="btn-full" onclick="finishConfirmModal()">Done</button>
+        <div class="cat-pill" onclick="location.hash='#cat/electronics'">
+          <img src="https://images.unsplash.com/photo-1498049794561-7780e7231661?ixlib=rb-4.0.3&w=200" alt="Electronics">
+          <span>Electronics</span>
+        </div>
+        <div class="cat-pill" onclick="location.hash='#cat/home'">
+          <img src="https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&w=200" alt="Home">
+          <span>Home & Kitchen</span>
+        </div>
+        <div class="cat-pill" onclick="location.hash='#cat/beauty'">
+          <img src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?ixlib=rb-4.0.3&w=200" alt="Beauty">
+          <span>Beauty</span>
+        </div>
+        <div class="cat-pill" onclick="location.hash='#cat/accessories'">
+          <img src="https://images.unsplash.com/photo-1620843437120-13f57ab02cbd?ixlib=rb-4.0.3&w=200" alt="Accessories">
+          <span>Accessories</span>
+        </div>
+      </div>
+
+      <h2 class="section-title">Trending Now</h2>
+      <div class="trending-tabs">
+        <span class="active">Best Deals</span> | <span>Top Rated</span> | <span>New Arrivals</span>
+      </div>
+      
+      <div class="product-grid">
+        ${featProducts.map(p => renderProductCard(p)).join('')}
+      </div>
+
+      <h2 class="section-title" style="margin-top:80px">Why Shop With Us?</h2>
+      <div class="features-strip">
+        <div class="feature-item">
+          <div class="icon-circle"><i class="fa-solid fa-box-open"></i></div>
+          <span>Wide Range of Products</span>
+        </div>
+        <div class="feature-item">
+          <div class="icon-circle"><i class="fa-solid fa-tags"></i></div>
+          <span>Affordable Prices</span>
+        </div>
+        <div class="feature-item">
+          <div class="icon-circle"><i class="fa-solid fa-truck-fast"></i></div>
+          <span>Fast & Safe Delivery</span>
+        </div>
+        <div class="feature-item">
+          <div class="icon-circle"><i class="fa-solid fa-rotate-left"></i></div>
+          <span>Easy Returns</span>
+        </div>
+      </div>
+
+      <div class="newsletter-section">
+        <h2>About StallCart</h2>
+        <p>Your one-stop destination for the latest trends, amazing deals, and everything you need. Subscribe to our newsletter to receive the best offers directly in your inbox.</p>
+        <div class="newsletter-form">
+          <input type="email" placeholder="Enter your email">
+          <button class="btn btn-blue" onclick="showToast('Subscribed Successfully!')">Subscribe</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCategory(cat) {
+  let products = DB.getProducts();
+  let title = "All Products";
+  if(cat === 'women') { products = products.filter(p => p.category === 'women'); title = "Women's Fashion"; }
+  if(cat === 'men') { products = products.filter(p => p.category === 'men'); title = "Men's Fashion"; }
+  if(cat === 'electronics') { products = products.filter(p => p.category === 'electronics'); title = "Electronics"; }
+
+  app.innerHTML = `
+    <div class="container page-container">
+      <h2 class="section-title" style="margin-top:0">${title}</h2>
+      <p style="text-align:center; color:var(--text-light); margin-bottom:40px;">Showing ${products.length} products</p>
+      <div class="product-grid" style="margin-bottom:40px">
+        ${products.length ? products.map(p => renderProductCard(p)).join('') : '<p style="text-align:center;width:100%">No products found.</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderSearch(q) {
+  const query = decodeURIComponent(q);
+  const products = DB.search(query);
+  app.innerHTML = `
+    <div class="container page-container">
+      <h2 class="section-title" style="margin-top:0">Search results for "${query}"</h2>
+      <p style="text-align:center; color:var(--text-light); margin-bottom:40px;">Found ${products.length} products</p>
+      <div class="product-grid" style="margin-bottom:40px">
+        ${products.length ? products.map(p => renderProductCard(p)).join('') : '<p style="text-align:center;width:100%">No products found.</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderProduct(id) {
+  const p = DB.getProductById(id);
+  if(!p) { app.innerHTML = `<div class="container page-container"><h1>Product not found</h1></div>`; return; }
+  
+  app.innerHTML = `
+    <div class="container page-container">
+      <div class="dp-flex">
+        <div class="dp-image">
+          <img src="${p.image}" alt="${p.title}">
+        </div>
+        <div class="dp-info">
+          <h1>${p.title}</h1>
+          <div style="font-size:32px; color:var(--primary-orange); font-weight:bold; margin-bottom:20px;">
+            ₹${p.price.toLocaleString('en-IN')}
+          </div>
+          <p style="color:var(--text-light); margin-bottom:30px; font-size:16px;">${p.description}</p>
+          
+          <div style="display:flex; gap:15px; margin-bottom:30px;">
+            <select id="quick-qty" style="padding:10px; border-radius:8px; border:1px solid #ccc; outline:none; font-size:16px;">
+              <option value="1">Qty: 1</option><option value="2">Qty: 2</option><option value="3">Qty: 3</option>
+            </select>
+            <button class="btn btn-orange" style="flex:1" onclick="State.addToCart(DB.getProductById(${p.id}), document.getElementById('quick-qty').value.replace('Qty: ',''))">Add to Cart</button>
+          </div>
+          
+          <div style="background:#f8fafc; padding:20px; border-radius:8px;">
+            <p style="margin-bottom:10px;"><i class="fa-solid fa-truck" style="color:var(--secondary-blue); width:25px;"></i> Free, Fast Delivery</p>
+            <p><i class="fa-solid fa-shield-halved" style="color:var(--secondary-blue); width:25px;"></i> Safe & Secure Payments</p>
+          </div>
+        </div>
+      </div>
+      
+      <h2 class="section-title">Similar Items</h2>
+      <div class="product-grid" style="margin-bottom:40px">
+        ${DB.getRelatedProducts(p.category, 4).map(rp => renderProductCard(rp)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderCart() {
+  if(State.cart.length === 0) {
+    app.innerHTML = `
+      <div class="container page-container" style="text-align:center">
+        <img src="https://cdn-icons-png.flaticon.com/512/2038/2038854.png" style="width:150px; opacity:0.5; margin-bottom:20px;">
+        <h2 style="color:var(--secondary-blue); margin-bottom:15px;">Your Cart is Empty!</h2>
+        <p style="color:var(--text-light); margin-bottom:30px;">Seems like you haven't added anything to your cart yet.</p>
+        <button class="btn btn-orange" onclick="location.hash='#home'">Start Shopping</button>
+      </div>`;
+    return;
+  }
+
+  const itemsHtml = State.cart.map(item => `
+    <div class="cart-row">
+      <img src="${item.image}" alt="${item.title}" onclick="location.hash='#product/${item.id}'" style="cursor:pointer">
+      <div class="cart-row-details">
+        <h3 onclick="location.hash='#product/${item.id}'" style="cursor:pointer; font-size:18px;">${item.title}</h3>
+        <p style="color:var(--primary-orange); font-size:20px; font-weight:bold; margin-bottom:15px;">₹${(item.price * item.qty).toLocaleString('en-IN')}</p>
+        <div style="display:flex; align-items:center; gap:15px;">
+          <select style="padding:5px 10px; border-radius:6px; border:1px solid #ccc; outline:none;" onchange="State.updateQty(${item.id}, this.value)">
+            ${[0,1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${item.qty == n ? 'selected' : ''}>${n===0?'0 (Remove)':n}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline" style="padding:5px 15px; font-size:13px;" onclick="State.updateQty(${item.id}, 0)">Remove</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  app.innerHTML = `
+    <div class="container page-container">
+      <h2 class="section-title" style="margin-top:0">Shopping Cart</h2>
+      <div class="checkout-grid">
+        <div class="cart-items-wrapper">
+          ${itemsHtml}
+        </div>
+        <div class="cart-sidebar">
+          <h3 style="color:var(--secondary-blue); margin-bottom:20px; font-size:22px;">Order Summary</h3>
+          <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-size:16px;">
+            <span>Subtotal (${State.cart.reduce((s,x)=>s+x.qty,0)} items)</span>
+            <span style="font-weight:bold;">₹${State.getCartTotal().toLocaleString('en-IN')}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:20px; font-size:16px; padding-bottom:20px; border-bottom:1px solid #ddd;">
+            <span>Delivery Charges</span>
+            <span style="color:green; font-weight:bold;">FREE</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:30px; font-size:20px; font-weight:bold; color:var(--primary-orange);">
+            <span>Total Value</span>
+            <span>₹${State.getCartTotal().toLocaleString('en-IN')}</span>
+          </div>
+          <button class="btn btn-orange" style="width:100%; font-size:18px; padding:15px;" onclick="location.hash='#checkout'">Proceed to Checkout</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCheckout() {
+  if(State.cart.length === 0) { location.hash = '#cart'; return; }
+  if(!State.user) { location.hash = '#account'; showToast("Please login before checkout!"); return; }
+
+  app.innerHTML = `
+    <div class="container page-container">
+      <h2 class="section-title" style="margin-top:0">Secure Checkout</h2>
+      
+      <form id="checkout-form" onsubmit="handleCheckout(event)">
+        <div class="checkout-grid">
+          <div>
+            <div style="background:#f8fafc; padding:30px; border-radius:var(--radius); margin-bottom:30px;">
+              <h3 style="color:var(--secondary-blue); margin-bottom:20px; font-size:20px;">1. Shipping Address</h3>
+              <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" value="${State.user.name}" required>
+              </div>
+              <div style="display:flex; gap:20px;">
+                <div class="form-group" style="flex:1">
+                  <label>Pincode</label>
+                  <input type="text" required placeholder="6 digits">
+                </div>
+                <div class="form-group" style="flex:1">
+                  <label>City</label>
+                  <input type="text" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Full Address</label>
+                <input type="text" required>
+              </div>
+            </div>
+
+            <div style="background:#f8fafc; padding:30px; border-radius:var(--radius);">
+              <h3 style="color:var(--secondary-blue); margin-bottom:20px; font-size:20px;">2. Payment Method</h3>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; background:white; padding:15px; border-radius:8px; border:1px solid var(--border-color); font-weight:normal;">
+                  <input type="radio" name="payment" value="cod" checked style="width:auto"> Cash on Delivery (COD)
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; background:white; padding:15px; border-radius:8px; border:1px solid var(--border-color); font-weight:normal;">
+                  <input type="radio" name="payment" value="upi" style="width:auto"> UPI (GPay, PhonePe)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="cart-sidebar" style="margin-top:0;">
+            <h3 style="color:var(--secondary-blue); margin-bottom:20px; font-size:20px;">Order Summary</h3>
+            ${State.cart.map(item => `
+              <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:14px;">
+                <span style="color:var(--text-light); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%;">${item.qty}x ${item.title}</span>
+                <span style="font-weight:500;">₹${(item.price*item.qty).toLocaleString('en-IN')}</span>
+              </div>
+            `).join('')}
+            <div style="border-top:1px solid #ddd; margin:20px 0;"></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:30px; font-size:22px; font-weight:bold; color:var(--primary-orange);">
+              <span>Total to Pay</span>
+              <span>₹${State.getCartTotal().toLocaleString('en-IN')}</span>
+            </div>
+            <button type="submit" class="btn btn-orange" style="width:100%; font-size:18px; padding:15px;">Place Order Securely</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+window.handleCheckout = function(e) {
+  e.preventDefault();
+  const trackId = 'STC-' + Math.floor(Math.random() * 90000000 + 10000000);
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  
+  State.orders.push({
+    id: trackId,
+    date: new Date().toLocaleDateString(),
+    total: State.getCartTotal(),
+    items: [...State.cart],
+    delivery: d.toLocaleDateString()
+  });
+  
+  State.clearCart();
+  
+  app.innerHTML = `
+    <div class="container page-container" style="text-align:center;">
+      <i class="fa-solid fa-circle-check" style="font-size:80px; color:#10b981; margin-bottom:30px;"></i>
+      <h1 style="color:var(--secondary-blue); margin-bottom:20px;">Order Placed Successfully!</h1>
+      <p style="font-size:18px; margin-bottom:10px; color:var(--text-light);">Thank you for shopping with StallCart.</p>
+      <div style="background:#f8fafc; padding:30px; border-radius:12px; display:inline-block; text-align:left; margin:30px 0;">
+        <p style="font-size:16px; margin-bottom:10px;"><strong>Order ID:</strong> ${trackId}</p>
+        <p style="font-size:16px;"><strong>Estimated Delivery:</strong> ${d.toLocaleDateString()}</p>
+      </div>
+      <br>
+      <button class="btn btn-orange" onclick="location.hash='#account/orders'">Track Your Order</button>
+    </div>
+  `;
+}
+
+function renderAccount() {
+  if(!State.user) {
+    app.innerHTML = `
+      <div class="auth-box">
+        <h1>Welcome Back</h1>
+        <p style="color:var(--text-light); margin-bottom:30px;">Sign in to access your orders and account.</p>
+        <form onsubmit="handleLogin(event)">
+          <div class="form-group" style="text-align:left;">
+            <label>Email Address</label>
+            <input type="email" id="login-email" required placeholder="you@example.com">
+          </div>
+          <div class="form-group" style="text-align:left; margin-bottom:30px;">
+            <label>Password</label>
+            <input type="password" id="login-pwd" required placeholder="••••••••">
+          </div>
+          <button type="submit" class="btn btn-orange" style="width:100%; font-size:16px; padding:12px;">Sign In</button>
+        </form>
+        <p style="font-size:14px; margin-top:30px; color:var(--text-light);">New to StallCart? <a href="#" onclick="alert('Mocked: Just sign in with anything!');" style="font-weight:bold;">Create an account</a></p>
+      </div>
     `;
-};
+    return;
+  }
 
-window.finishConfirmModal = function() {
-    document.getElementById('confirmModal').classList.remove('active');
-    // Reset verify modal state
-    selectedVerifyOption = null;
-    verifyScreenshotUrl = '';
-};
-
-window.handlePaymentScreenshot = async function(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const p = document.getElementById('screenshotFileName');
-    p.textContent = 'Uploading: ' + file.name + '...';
-    p.style.color = '#92400e';
-    
-    try {
-        const fileName = 'payment_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-        const { data, error } = await supabase.storage.from('files').upload(fileName, file);
-        if (error) {
-            p.textContent = 'Upload failed. Try again!';
-            p.style.color = '#dc2626';
-            return;
-        }
-        const { data: urlData } = supabase.storage.from('files').getPublicUrl(fileName);
-        if (urlData.publicUrl) {
-            paymentScreenshotUrl = urlData.publicUrl;
-            p.textContent = '✓ Uploaded: ' + file.name;
-            p.style.color = '#15803d';
-        }
-    } catch (error) {
-        p.textContent = 'Upload error: ' + error.message;
-        p.style.color = '#dc2626';
-    }
-};
-
-const validCoupons = {
-    'ARUM3007': { discount: 30, type: 'percent', description: '30% Discount Applied!' }
-};
-
-window.applyCoupon = function() {
-    const couponInput = document.getElementById('couponCode');
-    const couponMessage = document.getElementById('couponMessage');
-    const discountDisplay = document.getElementById('discountDisplay');
-    const couponCode = couponInput.value.trim().toUpperCase();
-    
-    if (!couponCode) {
-        couponMessage.textContent = 'Please enter a coupon code';
-        couponMessage.className = 'coupon-message error';
-        return;
-    }
-    
-    if (validCoupons[couponCode]) {
-        appliedCoupon = validCoupons[couponCode];
-        const discountAmount = Math.round(currentOrder.finalPrice * (appliedCoupon.discount / 100));
-        const newPrice = currentOrder.finalPrice - discountAmount;
-        
-        couponMessage.textContent = `🎉 ${appliedCoupon.description} You save ₹${discountAmount}!`;
-        couponMessage.className = 'coupon-message success';
-        
-        // Update the displayed price
-        document.getElementById('payPrice').innerHTML = `<span class="original-price">₹${currentOrder.finalPrice}</span> ₹${newPrice}`;
-        
-        // Show discount display
-        discountDisplay.innerHTML = `<span class="discount-badge-show">-${appliedCoupon.discount}%</span> <span class="saved-amount">You save ₹${discountAmount}!</span>`;
-        
-        // Store discounted price
-        currentOrder.discountedPrice = newPrice;
-        currentOrder.couponDiscount = discountAmount;
-        
-        // Trigger pop effect
-        triggerPopEffect();
-        showToast('Coupon applied! You got ' + appliedCoupon.discount + '% discount!', 'success');
-    } else {
-        couponMessage.textContent = '❌ Invalid coupon code';
-        couponMessage.className = 'coupon-message error';
-        appliedCoupon = null;
-        discountDisplay.innerHTML = '';
-        document.getElementById('payPrice').textContent = '₹' + currentOrder.finalPrice;
-        currentOrder.discountedPrice = null;
-        currentOrder.couponDiscount = null;
-    }
-};
-
-window.triggerPopEffect = function() {
-    // Create confetti effect
-    for (let i = 0; i < 50; i++) {
-        setTimeout(() => {
-            const confetti = document.createElement('div');
-            confetti.className = 'confetti';
-            confetti.style.left = Math.random() * 100 + 'vw';
-            confetti.style.backgroundColor = ['#b7791f', '#d69e2e', '#22c55e', '#3b82f6', '#ef4444'][Math.floor(Math.random() * 5)];
-            confetti.style.animationDuration = (Math.random() * 2 + 1) + 's';
-            document.body.appendChild(confetti);
-            
-            setTimeout(() => confetti.remove(), 3000);
-        }, i * 30);
-    }
-};
-
-function resetCoupon() {
-    appliedCoupon = null;
-    document.getElementById('couponCode').value = '';
-    document.getElementById('couponMessage').textContent = '';
-    document.getElementById('couponMessage').className = 'coupon-message';
-    document.getElementById('discountDisplay').innerHTML = '';
+  app.innerHTML = `
+    <div class="container page-container">
+      <h2 class="section-title" style="margin-top:0">My Account</h2>
+      <p style="text-align:center; font-size:18px; margin-bottom:40px;">Hello, <strong>${State.user.name}</strong>!</p>
+      
+      <div style="display:flex; gap:30px; justify-content:center; flex-wrap:wrap;">
+        <div style="background:#f8fafc; padding:30px; border-radius:var(--radius); width:300px; text-align:center; cursor:pointer; border:1px solid var(--border-color); transition:all 0.2s;" onclick="location.hash='#account/orders'" onmouseover="this.style.borderColor='var(--primary-orange)'" onmouseout="this.style.borderColor='var(--border-color)'">
+          <i class="fa-solid fa-box-open" style="font-size:40px; color:var(--secondary-blue); margin-bottom:20px;"></i>
+          <h3 style="color:var(--secondary-blue); margin-bottom:10px;">My Orders</h3>
+          <p style="color:var(--text-light); font-size:14px;">Track packages, return items, or buy again.</p>
+        </div>
+        <div style="background:#f8fafc; padding:30px; border-radius:var(--radius); width:300px; text-align:center; cursor:pointer; border:1px solid var(--border-color); transition:all 0.2s;" onclick="State.user=null; State.save(); location.hash='#home'" onmouseover="this.style.borderColor='red'" onmouseout="this.style.borderColor='var(--border-color)'">
+          <i class="fa-solid fa-arrow-right-from-bracket" style="font-size:40px; color:#e3342f; margin-bottom:20px;"></i>
+          <h3 style="color:#e3342f; margin-bottom:10px;">Sign Out</h3>
+          <p style="color:var(--text-light); font-size:14px;">Log out safely from your account.</p>
+        </div>
+      </div>
+    </div>
+  `;
 }
-
-async function saveOrderToFirestore(order) {
-  try { await addDoc(collection(db, "orders"), order); } catch(e) { console.log(e); }
-}
-
-window.confirmPayment = function() {
-  const firstName = document.getElementById('orderFirstName').value.trim();
-  const lastName = document.getElementById('orderLastName').value.trim();
-  const orderId = 'ARUM' + Date.now();
-  const userEmail = currentUser ? currentUser.email : '';
-  
-  // Use discounted price if coupon is applied, otherwise use regular price
-  const finalPrice = currentOrder.discountedPrice || currentOrder.finalPrice;
-  
-  // Store order ID in currentOrder for verification modal
-  currentOrder.orderId = orderId;
-  
-  const newOrder = {
-    id: orderId, firstName, lastName, service: currentOrder.service, description: currentOrder.description,
-    projectSummary: currentOrder.projectSummary || '',
-    price: finalPrice, phone: currentOrder.phone, status: 'pending',
-    date: new Date().toLocaleDateString(), orderTime: new Date().toISOString(),
-    fileUrls: uploadedFiles, userEmail: userEmail,
-    couponApplied: appliedCoupon ? appliedCoupon.code : null,
-    couponDiscount: currentOrder.couponDiscount || 0,
-    originalPrice: currentOrder.finalPrice
-  };
-  orders.unshift(newOrder);
-  localStorage.setItem('arumOrders', JSON.stringify(orders));
-  saveOrderToFirestore(newOrder);
-  closePaymentModal();
-  
-  // Open verification modal directly
-  openVerifyModal();
-  
-  showToast('Order placed','success');
-  renderOrders();
-  uploadedFiles = [];
-  resetCoupon();
-};
-
-window.closeConfirmModal = function() { 
-  document.getElementById('confirmModal').classList.remove('active'); 
-};
-
-// ==================== RENDER ORDERS ====================
 
 function renderOrders() {
-  const grid = document.getElementById('ordersGrid');
-  if (!grid) return;
+  if(!State.user) { location.hash = '#account'; return; }
   
-  if (!currentUser) {
-    grid.innerHTML = '<div class="no-orders" style="padding: 60px 20px; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 16px; border: 3px dashed #0ea5e9;"><div style="font-size: 18px; color: var(--deep-blue); margin-bottom: 12px; font-weight: 700;">🔑 Login Required</div><p style="color: var(--medium-gray);">Sign in to view your order dashboard with live status updates.</p><button class="btn btn-solid" onclick="openModal(\'login\')" style="margin-top: 20px; padding: 12px 32px; font-size: 15px;">Login Now</button></div>';
-    return;
-  }
-  
-  const userEmail = currentUser.email.toLowerCase();
-  const userOrders = orders.filter(order => order.userEmail && order.userEmail.toLowerCase() === userEmail);
-  
-  if(userOrders.length === 0) { 
-    grid.innerHTML = '<div class="no-orders" style="padding: 60px 40px; background: linear-gradient(135deg, #f8fafc, #e2e8f0); border-radius: 20px; border: 3px dashed #64748b; text-align: center;"><div style="font-size: 48px; margin-bottom: 20px;">📦</div><h3 style="color: var(--deep-blue); margin-bottom: 12px; font-size: 22px;">No Orders Yet</h3><p style="color: var(--medium-gray); font-size: 16px; margin-bottom: 24px;">Your order dashboard is empty. Place your first order to get started!</p><div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;"><button class="btn btn-solid" onclick="scrollToServices()" style="padding: 14px 28px; font-size: 15px;">🛒 Browse Services</button><a href="#services" class="btn btn-outline" onclick="scrollToServices()" style="padding: 14px 28px; font-size: 15px;">View Pricing</a></div></div>'; 
-    return; 
-  }
-  grid.innerHTML = userOrders.map(order => {
-    const status = order.status || 'pending';
-    const statusClass = 'status-' + status;
-    const statusText = status.charAt(0).toUpperCase() + status.slice(1);
-    
-    // Admin note display
-    let adminNoteHtml = '';
-    if (order.adminNote) {
-      adminNoteHtml = `<div class="admin-note-display" style="background: rgba(255,159,10,0.1); border-left: 3px solid #ff9f0a; padding: 8px 12px; margin-top: 8px; border-radius: 4px;">
-        <p style="margin:0;font-size:12px;color:#ff9f0a;"><strong>📝 Admin Note:</strong> ${order.adminNote}</p>
-      </div>`;
-    }
-    
-    // Description with Read More
-    let descHtml = '';
-    if (order.description && order.description.length > 100) {
-      descHtml = `<span class="desc-text">${order.description.substring(0, 100)}...</span><button class="read-more-btn" onclick="openDescView('${order.id}', 'orders')">Read More</button>`;
-    } else {
-      descHtml = order.description ? order.description : 'No description';
-    }
-    
-    return `<div class="order-card">
-      <div class="order-header">
-        <span class="order-id">#${order.id}</span>
-        <span class="order-status ${statusClass}">${statusText}</span>
+  const ordersHtml = State.orders.length ? State.orders.map(o => `
+    <div style="background:white; border:1px solid var(--border-color); border-radius:var(--radius); margin-bottom:30px; overflow:hidden; box-shadow:var(--shadow-sm);">
+      <div style="background:#f8fafc; padding:20px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:20px; border-bottom:1px solid var(--border-color);">
+        <div><span style="color:var(--text-light); font-size:12px; display:block;">ORDER PLACED</span><strong>${o.date}</strong></div>
+        <div><span style="color:var(--text-light); font-size:12px; display:block;">TOTAL</span><strong>₹${o.total.toLocaleString('en-IN')}</strong></div>
+        <div><span style="color:var(--text-light); font-size:12px; display:block;">ORDER #</span><strong>${o.id}</strong></div>
       </div>
-      <div class="order-service">${order.service}</div>
-      <div class="order-details">${descHtml}</div>
-      <div class="order-date">📅 ${order.date || 'N/A'}</div>
-      <div class="order-full-details">
-        <p><strong>👤 Name:</strong> ${order.firstName || ''} ${order.lastName || ''}</p>
-        <p><strong>📱 Phone:</strong> ${order.phone || 'N/A'}</p>
-        <p><strong>💰 Price:</strong> ₹${order.price || 0}</p>
+      <div style="padding:30px;">
+        <h3 style="color:#10b981; margin-bottom:20px;"><i class="fa-solid fa-truck-fast"></i> Arriving on ${o.delivery}</h3>
+        ${o.items.map(item => `
+          <div style="display:flex; gap:20px; margin-bottom:20px; align-items:center;">
+            <img src="${item.image}" style="width:80px; height:80px; object-fit:contain; border-radius:8px; border:1px solid #eee; padding:5px;" alt="">
+            <div style="flex:1;">
+              <a href="#product/${item.id}" style="color:var(--secondary-blue); font-weight:600; font-size:16px;">${item.title}</a>
+              <p style="color:var(--text-light); font-size:14px; margin-top:5px;">Qty: ${item.qty}</p>
+            </div>
+            <div>
+              <button class="btn btn-outline">Track Item</button>
+            </div>
+          </div>
+        `).join('')}
       </div>
-      ${adminNoteHtml}
-      ${status === 'pending' ? `<button class="cancel-btn" onclick="cancelOrder('${order.id}')">Cancel Order</button><button class="remove-btn" onclick="removeOrder('${order.id}')">Remove</button>` : ''}
-      ${status === 'cancelled' || status === 'completed' ? `<button class="remove-btn" onclick="removeOrder('${order.id}')">Remove</button>` : ''}
-    </div>`;
-  }).join('');
+    </div>
+  `).join('') : '<div style="text-align:center; padding:60px 0;"><i class="fa-solid fa-box-open" style="font-size:60px; color:#ccc; margin-bottom:20px;"></i><h3 style="color:var(--secondary-blue);">No Orders Yet</h3><p style="color:var(--text-light); margin-top:10px;">Looks like you haven\'t made your choice yet.</p></div>';
+
+  app.innerHTML = `
+    <div class="container page-container">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:30px; font-size:14px;">
+        <a href="#account" style="color:var(--text-light)">My Account</a> 
+        <i class="fa-solid fa-chevron-right" style="color:#ccc; font-size:10px;"></i> 
+        <span style="color:var(--primary-orange); font-weight:500;">Your Orders</span>
+      </div>
+      <h2 class="section-title" style="margin-top:0;">Your Orders</h2>
+      <div style="max-width:1000px; margin:0 auto;">
+        ${ordersHtml}
+      </div>
+    </div>
+  `;
 }
 
-window.scrollToServices = function() {
-  document.getElementById('services').scrollIntoView({ behavior: 'smooth' });
-};
+window.handleLogin = function(e) {
+  e.preventDefault();
+  const em = document.getElementById('login-email').value;
+  State.user = { email: em, name: em.split('@')[0] };
+  State.save();
+  location.hash = '#home';
+}
 
-// Auto-scroll to orders if logged in
-window.addEventListener('load', function() {
-  if (currentUser && window.location.hash !== '#my-orders') {
-    setTimeout(() => {
-      const ordersSection = document.getElementById('my-orders');
-      if (ordersSection) {
-        ordersSection.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, 800);
+// ROUTER
+function router() {
+  const hash = window.location.hash.substring(1) || 'home';
+  window.scrollTo(0,0);
+  
+  if(hash === 'home') renderHome();
+  else if(hash === 'cart') renderCart();
+  else if(hash === 'checkout') renderCheckout();
+  else if(hash === 'account') renderAccount();
+  else if(hash === 'account/orders') renderOrders();
+  else if(hash.startsWith('cat/')) {
+    const cat = hash.split('/')[1];
+    renderCategory(cat);
   }
+  else if(hash.startsWith('product/')) {
+    renderProduct(hash.split('/')[1]);
+  }
+  else if(hash.startsWith('search?q=')) {
+    renderSearch(hash.split('=')[1]);
+  }
+}
+
+// INIT
+window.addEventListener('hashchange', router);
+document.getElementById('search-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const q = document.getElementById('search-input').value;
+  if(q) location.hash = `#search?q=${encodeURIComponent(q)}`;
 });
 
-window.cancelOrder = async function(orderId) {
-  if(!confirm("Are you sure you want to cancel this order?")) return;
-  const orderIndex = orders.findIndex(o => o.id === orderId);
-  if(orderIndex !== -1) {
-    orders[orderIndex].status = 'cancelled';
-    localStorage.setItem('arumOrders', JSON.stringify(orders));
-    try {
-      const q = query(collection(db, "orders"), where("id", "==", orderId));
-      const querySnapshot = await getDocs(q);
-      if(!querySnapshot.empty) {
-        const orderDoc = doc(db, "orders", querySnapshot.docs[0].id);
-        await updateDoc(orderDoc, { status: 'cancelled' });
-      }
-    } catch(e) { console.log("Error updating Firestore:", e); }
-    renderOrders();
-    showToast('Order cancelled', 'success');
-  }
-};
-
-window.removeOrder = async function(orderId) {
-  if(!confirm("Are you sure you want to remove this order completely?")) return;
-  const orderIndex = orders.findIndex(o => o.id === orderId);
-  if(orderIndex !== -1) {
-    orders.splice(orderIndex, 1);
-    localStorage.setItem('arumOrders', JSON.stringify(orders));
-    try {
-      const q = query(collection(db, "orders"), where("id", "==", orderId));
-      const querySnapshot = await getDocs(q);
-      if(!querySnapshot.empty) {
-        const orderDoc = doc(db, "orders", querySnapshot.docs[0].id);
-        await deleteDoc(orderDoc);
-      }
-    } catch(e) { console.log("Error removing from Firestore:", e); }
-    renderOrders();
-    showToast('Order removed', 'success');
-  }
-};
-
-// ==================== FIRESTORE SYNC ====================
-
-async function syncOrdersFromFirestore() {
-  try {
-    const q = query(collection(db, "orders"), orderBy("orderTime", "desc"));
-    const querySnapshot = await getDocs(q);
-    const firestoreOrders = [];
-    querySnapshot.forEach((docSnap) => { firestoreOrders.push({ id: docSnap.id, ...docSnap.data() }); });
-    if(firestoreOrders.length > 0) {
-      const localOrders = JSON.parse(localStorage.getItem('arumOrders') || '[]');
-      firestoreOrders.forEach(fOrder => {
-        const localIndex = localOrders.findIndex(o => o.id === fOrder.id);
-        if(localIndex !== -1) { localOrders[localIndex] = { ...localOrders[localIndex], ...fOrder }; }
-        else { localOrders.push(fOrder); }
-      });
-      orders = localOrders.sort((a, b) => new Date(b.orderTime) - new Date(a.orderTime));
-      localStorage.setItem('arumOrders', JSON.stringify(orders));
-      renderOrders();
-      renderWork();
-    }
-  } catch(e) { console.log("Error syncing orders:", e); }
-}
-
-let unsubscribe = null;
-
-function setupRealtimeListener() {
-  if (unsubscribe) return;
-  const q = query(collection(db, "orders"), orderBy("orderTime", "desc"));
-  unsubscribe = onSnapshot(q, (querySnapshot) => {
-    const firestoreOrders = [];
-    querySnapshot.forEach((docSnap) => { firestoreOrders.push({ id: docSnap.id, ...docSnap.data() }); });
-    if(firestoreOrders.length > 0) {
-      const localOrders = JSON.parse(localStorage.getItem('arumOrders') || '[]');
-      
-      // Check for status changes and notify user
-      firestoreOrders.forEach(fOrder => {
-        const localIndex = localOrders.findIndex(o => o.id === fOrder.id);
-        if(localIndex !== -1) {
-          const oldStatus = localOrders[localIndex].status;
-          const newStatus = fOrder.status;
-          
-          // Notify user of status changes
-          if (oldStatus !== newStatus && currentUser && fOrder.userEmail === currentUser.email) {
-            if (newStatus === 'cancelled') {
-              showToast('⚠️ Your order #' + fOrder.id + ' has been cancelled by admin', 'error');
-            } else if (newStatus === 'approved') {
-              showToast('✅ Your order #' + fOrder.id + ' has been approved!', 'success');
-            } else if (newStatus === 'completed') {
-              showToast('🎉 Your order #' + fOrder.id + ' is completed!', 'success');
-            }
-          }
-          
-          localOrders[localIndex] = { ...localOrders[localIndex], ...fOrder };
-        }
-        else { localOrders.push(fOrder); }
-      });
-      orders = localOrders.sort((a, b) => new Date(b.orderTime) - new Date(a.orderTime));
-      localStorage.setItem('arumOrders', JSON.stringify(orders));
-      renderOrders();
-      renderWork();
-    }
-  }, (error) => { console.log("Real-time listener error:", error); });
-}
-
-// ==================== TERMS MODAL ====================
-
-window.showTerms = function(e) { if(e) e.preventDefault(); document.getElementById('termsModal').classList.add('active'); };
-window.closeTermsModal = function() { document.getElementById('termsModal').classList.remove('active'); };
-
-// ==================== RENDER WORK ====================
-
-function renderWork() {
-  const grid = document.getElementById('workGrid');
-  if (!grid) return;
-  
-  // Filter completed orders to show only the current user's completed orders
-  const userEmail = currentUser ? currentUser.email.toLowerCase() : '';
-  const userCompletedOrders = orders.filter(order => 
-    order.status === 'completed' && 
-    order.userEmail && 
-    order.userEmail.toLowerCase() === userEmail
-  );
-  
-  if (userCompletedOrders.length === 0) {
-    grid.innerHTML = '<div class="no-orders">No completed work yet. Once your order is completed, it will appear here!</div>';
-    return;
-  }
-  grid.innerHTML = userCompletedOrders.map(order => {
-    let filesHtml = '';
-    if (order.fileUrls && order.fileUrls.length > 0) {
-      filesHtml = `<div class="work-files">
-        <h4>📁 Your Completed Work:</h4>
-        ${order.fileUrls.map(url => {
-          const fileName = url.split('/').pop();
-          return `<a href="${url}" target="_blank" class="work-file-link">📄 ${fileName || 'View File'}</a>`;
-        }).join('')}
-      </div>`;
-    }
-    
-    // Description with Read More
-    let descHtml = '';
-    if (order.description && order.description.length > 6) {
-      descHtml = `<span class="desc-text">${order.description.substring(0, 6)}</span><button class="read-more-btn" onclick="openDescView('${order.id}', 'work')">Read More</button>`;
-    } else {
-      descHtml = order.description ? order.description : 'No description';
-    }
-    
-    return `<div class="work-card">
-      <div class="work-header">
-        <span class="work-id">#${order.id}</span>
-        <span class="work-status">Completed</span>
-      </div>
-      <div class="work-service">${order.service}</div>
-      <div class="work-description">${descHtml}</div>
-      <div class="order-date">📅 Completed on: ${order.completedDate || order.date || 'N/A'}</div>
-      ${filesHtml}
-      <button class="view-work-btn" onclick="viewWorkDetails('${order.id}')">View Full Details</button>
-    </div>`;
-  }).join('');
-}
-
-// ==================== DESCRIPTION VIEW MODAL FUNCTIONS ====================
-
-window.openDescView = function(orderId, source) {
-  const order = orders.find(o => o.id === orderId);
-  if (!order) return;
-  
-  const contentEl = document.getElementById('descViewContent');
-  const metaEl = document.getElementById('descViewMeta');
-  
-  contentEl.textContent = order.description || 'No description';
-  metaEl.innerHTML = `<p><strong>Order ID:</strong> #${order.id}</p>
-    <p><strong>Service:</strong> ${order.service}</p>
-    <p><strong>Date:</strong> ${order.date || 'N/A'}</p>`;
-  
-  document.getElementById('descViewModal').classList.add('active');
-};
-
-window.closeDescViewModal = function() {
-  document.getElementById('descViewModal').classList.remove('active');
-};
-
-window.viewWorkDetails = function(orderId) {
-  const order = orders.find(o => o.id === orderId);
-  if (!order) return;
-  let message = `*Your Completed Work Details*\n\n📋 Order ID: #${order.id}\n📝 Service: ${order.service}\n💰 Price: ₹${order.price}\n📅 Completed: ${order.completedDate || order.date}\n\n`;
-  if (order.description) message += `📄 Description: ${order.description}\n\n`;
-  message += `\nThank you for choosing ARUM!`;
-  window.open(`https://wa.me/917979082730?text=${encodeURIComponent(message)}`, '_blank');
-};
-
-// ==================== FEEDBACK FUNCTIONS ====================
-
-let currentRating = 0;
-
-window.setRating = function(rating) {
-    currentRating = rating;
-    const stars = document.querySelectorAll('.star');
-    stars.forEach((star, index) => {
-        if (index < rating) {
-            star.classList.add('active');
-        } else {
-            star.classList.remove('active');
-        }
-    });
-    const ratingText = document.getElementById('ratingText');
-    const ratingTexts = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
-    ratingText.textContent = ratingTexts[rating] || 'Tap to rate';
-};
-
-window.submitFeedback = async function() {
-    const name = document.getElementById('feedbackName').value.trim();
-    const message = document.getElementById('feedbackMessage').value.trim();
-    
-    if (!name) {
-        showToast('Please enter your name', 'error');
-        return;
-    }
-    if (currentRating === 0) {
-        showToast('Please select a rating', 'error');
-        return;
-    }
-    if (!message) {
-        showToast('Please enter your feedback', 'error');
-        return;
-    }
-    
-    try {
-        const userEmail = currentUser ? currentUser.email : '';
-        
-        const feedbackData = {
-            name: name,
-            rating: currentRating,
-            message: message,
-            userEmail: userEmail,
-            date: new Date().toLocaleDateString(),
-            createdAt: new Date().toISOString()
-        };
-        
-        await addDoc(collection(db, "feedback"), feedbackData);
-        
-        showToast('Thank you for your feedback!', 'success');
-        
-        // Reset form
-        document.getElementById('feedbackName').value = '';
-        document.getElementById('feedbackMessage').value = '';
-        currentRating = 0;
-        const stars = document.querySelectorAll('.star');
-        stars.forEach(star => star.classList.remove('active'));
-        document.getElementById('ratingText').textContent = 'Tap to rate';
-        
-    } catch (error) {
-        console.error('Error submitting feedback:', error);
-        showToast('Error submitting feedback', 'error');
-    }
-};
-
-// ==================== PERFORMANCE MONITORING ====================
-
-// Web Vitals Tracking (LCP, FID, CLS)
-window.addEventListener('DOMContentLoaded', function() {
-    
-    // Lazy load IntersectionObserver for animations and non-critical content
-    if ('IntersectionObserver' in window) {
-        const lazyElements = document.querySelectorAll('.service-card, .why-card, .contact-card');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('animate-in');
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.1 });
-        
-        lazyElements.forEach(el => observer.observe(el));
-    }
-    
-    // Track LCP (Largest Contentful Paint)
-    if ('PerformanceObserver' in window) {
-        try {
-            const lcpObserver = new PerformanceObserver((entryList) => {
-                const entries = entryList.getEntries();
-                const lastEntry = entries[entries.length - 1];
-                const lcpTime = lastEntry.renderTime || lastEntry.loadTime;
-                console.log('[ARUM Performance] LCP:', lcpTime.toFixed(2), 'ms');
-                
-                // Store for analytics
-                if (window.localStorage) {
-                    const perfData = JSON.parse(localStorage.getItem('arum_perf') || '{}');
-                    perfData.lcp = lcpTime;
-                    localStorage.setItem('arum_perf', JSON.stringify(perfData));
-                }
-            });
-            lcpObserver.observe({ entryType: 'largest-contentful-paint' });
-        } catch (e) {
-            console.log('[ARUM Performance] LCP observer not supported');
-        }
-        
-        // Track CLS (Cumulative Layout Shift)
-        try {
-            let clsValue = 0;
-            const clsObserver = new PerformanceObserver((entryList) => {
-                for (const entry of entryList.getEntries()) {
-                    if (!entry.hadRecentInput) {
-                        clsValue += entry.value;
-                    }
-                }
-                console.log('[ARUM Performance] CLS:', clsValue.toFixed(4));
-                
-                if (window.localStorage) {
-                    const perfData = JSON.parse(localStorage.getItem('arum_perf') || '{}');
-                    perfData.cls = clsValue;
-                    localStorage.setItem('arum_perf', JSON.stringify(perfData));
-                }
-            });
-            clsObserver.observe({ entryType: 'layout-shift' });
-        } catch (e) {
-            console.log('[ARUM Performance] CLS observer not supported');
-        }
-        
-        // Track FCP (First Contentful Paint)
-        try {
-            const fcpObserver = new PerformanceObserver((entryList) => {
-                const entries = entryList.getEntries();
-                const fcpEntry = entries.find(e => e.name === 'first-contentful-paint');
-                if (fcpEntry) {
-                    const fcpTime = fcpEntry.startTime;
-                    console.log('[ARUM Performance] FCP:', fcpTime.toFixed(2), 'ms');
-                    
-                    if (window.localStorage) {
-                        const perfData = JSON.parse(localStorage.getItem('arum_perf') || '{}');
-                        perfData.fcp = fcpTime;
-                        localStorage.setItem('arum_perf', JSON.stringify(perfData));
-                    }
-                }
-            });
-            fcpObserver.observe({ entryType: 'paint' });
-        } catch (e) {
-            console.log('[ARUM Performance] FCP observer not supported');
-        }
-    }
-    
-    // Log navigation timing
-    window.addEventListener('load', function() {
-        setTimeout(function() {
-            const perf = window.performance;
-            if (perf && perf.timing) {
-                const loadTime = perf.timing.loadEventEnd - perf.timing.navigationStart;
-                const domReady = perf.timing.domContentLoadedEventEnd - perf.timing.navigationStart;
-                console.log('[ARUM Performance] Page Load Time:', loadTime, 'ms');
-                console.log('[ARUM Performance] DOM Ready:', domReady, 'ms');
-                
-                if (window.localStorage) {
-                    const perfData = JSON.parse(localStorage.getItem('arum_perf') || '{}');
-                    perfData.loadTime = loadTime;
-                    perfData.domReady = domReady;
-                    localStorage.setItem('arum_perf', JSON.stringify(perfData));
-                }
-            }
-        }, 0);
-    });
-});
-
-// Performance Budget Helper
-window.performanceBudget = function(thresholds) {
-    const results = { pass: true, metrics: {} };
-    
-    if (window.localStorage) {
-        const perfData = JSON.parse(localStorage.getItem('arum_perf') || '{}');
-        
-        if (thresholds.lcp && perfData.lcp) {
-            results.metrics.lcp = perfData.lcp;
-            results.pass = results.pass && perfData.lcp <= thresholds.lcp;
-        }
-        if (thresholds.fcp && perfData.fcp) {
-            results.metrics.fcp = perfData.fcp;
-            results.pass = results.pass && perfData.fcp <= thresholds.fcp;
-        }
-        if (thresholds.cls && perfData.cls) {
-            results.metrics.cls = perfData.cls;
-            results.pass = results.pass && perfData.cls <= thresholds.cls;
-        }
-    }
-    
-    return results;
-};
-
-// ==================== SERVICE PAGE LIGHTWEIGHT MODE ====================
-window.isServicePage = window.location.pathname.includes('.html') && !window.location.pathname.includes('index.html') && !window.location.pathname.includes('admin.html');
-
-if (window.isServicePage) {
-  // Basic mobile nav for service pages
-  window.toggleMobileNav = function() {
-    const mobileNav = document.getElementById('mobileNav');
-    if (mobileNav) mobileNav.classList.toggle('active');
-    const hamburger = document.querySelector('.hamburger');
-    if (hamburger) hamburger.classList.toggle('active');
-  };
-  
-  window.closeMobileNav = function() {
-    const mobileNav = document.getElementById('mobileNav');
-    if (mobileNav) mobileNav.classList.remove('active');
-    const hamburger = document.querySelector('.hamburger');
-    if (hamburger) hamburger.classList.remove('active');
-  };
-  
-  // Order modal stub - redirect to index
-  window.openOrderModal = function(service, price) {
-    const url = new URL('index.html', window.location.origin);
-    url.searchParams.set('order', service);
-    url.searchParams.set('price', price);
-    window.location.href = url;
-  };
-  
-  console.log('[ARUM] Service page lightweight mode active');
-}
-
-// ==================== INITIALIZATION ====================
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Setup file input listener if modals present
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) {
-        fileInput.addEventListener('change', function(e) { handleFileSelect(this); });
-    }
-    
-    // Setup form input listeners if order form present
-    if (!window.isServicePage) {
-      ['orderDescription','orderFirstName','orderLastName','orderPhone'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('input', updateProceedButton);
-      });
-      
-      const termsCheck = document.getElementById('termsCheck');
-      if (termsCheck) termsCheck.addEventListener('change', updateProceedButton);
-      
-      // Sync orders and setup real-time listener
-      syncOrdersFromFirestore();
-      setupRealtimeListener();
-      renderWork();
-      renderOrders();
-    }
-    
-    // Performance monitoring always
-    if ('PerformanceObserver' in window) {
-      // LCP, CLS, FCP observers here (existing code)
-    }
-});
-
-
-
-// Service Worker Registration
-if ('serviceWorker' in navigator) {
-navigator.serviceWorker.register('sw.js?v=4.0.0')
-.then(reg => console.log('SW v4.0.0 registered'))
-    .catch(err => console.log('SW registration failed'));
-}
-
+updateNavCounts();
+router();
